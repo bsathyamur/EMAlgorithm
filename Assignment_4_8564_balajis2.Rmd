@@ -1,0 +1,149 @@
+### CS598 - PSL - CODING ASSIGNMENT 14
+### Net ID: balajis2
+### Date: 10/14/2020
+
+#### STEP 0: Install required packages, library and set seed
+```{r}
+set.seed(8564) 
+library(mclust)
+```
+
+#### E-step and M-step derivations
+
+
+**E-step:**
+
+The below derivations are used for calculating the new probabilities of the two components:
+
+**For component 1**
+$$
+A = p1 * N(x;μ,Σ) / (p1 * N(x;μ,Σ) + p2 * N(x;μ,Σ))
+$$
+$$
+N(x;μ,Σ) =  1/\sqrt{(2\pi)^2} * 1/\sqrt{|\sum|)} * exp^(-0.5 * (x-\mu)^t * (\sum)^-1 * (x-\mu))
+$$
+
+**For component 2**
+
+$$
+B = 1 - A
+$$
+
+**M-step**
+
+The below equations for calculating the updated probabilities ($\hat{p1}, \hat{p2}$), mean ($\hat{\mu1},\hat{\mu2}$) and sigma ($\hat{\sum}$)
+
+
+For $\hat{p1}, \hat{p2}$
+
+$$\hat{p1} = \sum p1/n$$ 
+$$\hat{p2} = \sum p2/n$$ 
+                      
+                      
+For $\hat{\mu1},\hat{\mu2}$
+
+$$\hat{\mu1} = \sum(\hat{p1} * x) / \sum(\hat{p1}) $$
+$$\hat{\mu2} = \sum(\hat{p2} * x) / \sum(\hat{p2}) $$
+
+For sigma $\hat{\sum}$
+
+$$\hat{\sum} = 1/n * \sum(p1 * (X-\hat{\mu1}) + p2 * (X-\hat{\mu2}) $$
+
+#### STEP 1: myEM function
+```{r}
+
+dbinorm<-function(x,m,s){
+  return( 1/sqrt((2*pi)**2) * 1/sqrt(det(s)) * exp(-0.5 * t(x-m) %*% solve(s) %*% (x-m)) )
+}
+
+Estep <- function(data, G, para){
+  # Your Code
+  # Return the n-by-G probability matrix
+  n <- nrow(data)
+  new_prob_matrix <- matrix(0, n, G) 
+  
+  m1 = c(para$mean[1,1],para$mean[2,1])
+  m2 = c(para$mean[1,2],para$mean[2,2])
+  
+  s = matrix(c(para$Sigma[1,1],para$Sigma[1,2],para$Sigma[2,1],para$Sigma[2,2]),2,2)
+  p1 = para$prob[1]
+  p2 = para$prob[2]
+  
+  for (i in 1:n){
+    X = c(data[i,1],data[i,2])
+    p = (p1 * dbinorm(X,m1,s)) / ( (p1 * dbinorm(X,m1,s)) + (p2*dbinorm(X,m2,s)))
+    new_prob_matrix[i,1] = p
+    new_prob_matrix[i,2] = 1-p
+  }
+  
+  return(new_prob_matrix)
+}
+
+Mstep <- function(data, G, para, post.prob){ 
+  
+  # calculate updated probabilities
+  new_p1 = mean(post.prob[,1])
+  new_p2 = mean(post.prob[,2])
+  
+  # calculate updated probabilities
+  new_m1 = (t(data)%*%diag(post.prob[,1])%*%rep(1,nrow(data)))/sum(post.prob[,1])
+  new_m2 = (t(data)%*%diag(post.prob[,2])%*%rep(1,nrow(data)))/sum(post.prob[,2])
+  
+  # calculate updated sigma
+  MY1 = matrix(new_m1,nrow(data),2,byrow=T)
+  MY2 = matrix(new_m2,nrow(data),2,byrow=T)
+  sigma = (t(data-MY1)%*%diag(post.prob[,1])%*%as.matrix(data-MY1)) + (t(data-MY2)%*%diag(post.prob[,2])%*%as.matrix(data-MY2))
+  
+  for (i in 1:2){
+    sigma[i,1] = sigma[i,1]/nrow(data)
+    sigma[i,2] = sigma[i,2]/nrow(data)
+  }
+  
+  #Generate new parameters
+  new_para = list(prob= cbind(as.matrix(new_p1),c(new_p2)), mean = cbind(as.matrix(new_m1),c(new_m2)), Sigma= sigma)
+  
+  #Return new parameters
+  return(new_para)
+
+  }
+
+myEM <- function(data, itmax, G, para){
+  # itmax: num of iterations
+  # G:     num of components
+  # para:  list of parameters (prob, mean, Sigma)
+  
+  for(t in 1:itmax){
+    post.prob <- Estep(data, G, para)
+    para <- Mstep(data, G, para, post.prob)
+  }
+  
+  return(para)  
+}
+```
+#### STEP 2: Load data
+```{r}
+n <- nrow(faithful)
+Z <- matrix(0, n, 2) 
+Z[sample(1:n, 120), 1] <- 1 
+Z[, 2] <- 1 - Z[, 1]
+
+ini1 <- mstep(modelName="EEE", faithful , Z)
+
+ini0 <- mstep(modelName="EEE", faithful , Z)$parameters
+
+para0 <- list(prob = ini0$pro, 
+              mean = ini0$mean, 
+              Sigma = ini0$variance$Sigma)
+
+```
+#### STEP 4: Test myEM function
+```{r}
+myEM(data=faithful, itmax=10, G=2, para=para0)
+```
+#### STEP 5: COMPARE OUTPUT FROM mcluster
+```{r}
+Rout <- em(modelName = "EEE", data = faithful,
+           control = emControl(eps=0, tol=0, itmax = 10), 
+           parameters = ini0)$parameters
+list(Rout$pro, Rout$mean, Rout$variance$Sigma)
+```
